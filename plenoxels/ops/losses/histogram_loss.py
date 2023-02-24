@@ -3,7 +3,6 @@ Implements the histogram loss from mipnerf360
 """
 import torch
 
-
 EPS = 1.0e-7
 
 
@@ -24,11 +23,20 @@ def outer(
         t1_ends: end of the interval edges
         y1: weights
     """
-    cy1 = torch.cat([torch.zeros_like(y1[..., :1]), torch.cumsum(y1, dim=-1)], dim=-1)
+    cy1 = torch.cat(
+        [torch.zeros_like(y1[..., :1]), torch.cumsum(y1, dim=-1)], dim=-1
+    )
 
-    idx_lo = torch.searchsorted(t1_starts.contiguous(), t0_starts.contiguous(), right=True) - 1
+    idx_lo = (
+        torch.searchsorted(
+            t1_starts.contiguous(), t0_starts.contiguous(), right=True
+        )
+        - 1
+    )
     idx_lo = torch.clamp(idx_lo, min=0, max=y1.shape[-1] - 1)
-    idx_hi = torch.searchsorted(t1_ends.contiguous(), t0_ends.contiguous(), right=True)
+    idx_hi = torch.searchsorted(
+        t1_ends.contiguous(), t0_ends.contiguous(), right=True
+    )
     idx_hi = torch.clamp(idx_hi, min=0, max=y1.shape[-1] - 1)
     cy1_lo = torch.take_along_dim(cy1[..., :-1], idx_lo, dim=-1)
     cy1_hi = torch.take_along_dim(cy1[..., 1:], idx_hi, dim=-1)
@@ -52,7 +60,9 @@ def lossfun_outer(
         t_env: interval edges of the upper bound enveloping histogram (from proposal model)
         w_env: weights that should upper bound the inner (t,w) histogram (from proposal model)
     """
-    w_outer = outer(t[..., :-1], t[..., 1:], t_env[..., :-1], t_env[..., 1:], w_env)
+    w_outer = outer(
+        t[..., :-1], t[..., 1:], t_env[..., :-1], t_env[..., 1:], w_env
+    )
     return torch.clip(w - w_outer, min=0) ** 2 / (w + EPS)
 
 
@@ -60,7 +70,9 @@ def ray_samples_to_sdist(ray_samples):
     """Convert ray samples to s space"""
     starts = ray_samples.spacing_starts
     ends = ray_samples.spacing_ends
-    sdist = torch.cat([starts[..., 0], ends[..., -1:, 0]], dim=-1)  # (num_rays, num_samples + 1)
+    sdist = torch.cat(
+        [starts[..., 0], ends[..., -1:, 0]], dim=-1
+    )  # (num_rays, num_samples + 1)
     return sdist
 
 

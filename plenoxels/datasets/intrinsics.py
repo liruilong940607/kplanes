@@ -23,6 +23,8 @@ class Intrinsics:
         self.height = int(nh)
 
     def __repr__(self):
-        return (f"Intrinsics(width={self.width}, height={self.height}, "
-                f"focal_x={self.focal_x}, focal_y={self.focal_y}, "
-                f"center_x={self.center_x}, center_y={self.center_y})")
+        return (
+            f"Intrinsics(width={self.width}, height={self.height}, "
+            f"focal_x={self.focal_x}, focal_y={self.focal_y}, "
+            f"center_x={self.center_x}, center_y={self.center_y})"
+        )

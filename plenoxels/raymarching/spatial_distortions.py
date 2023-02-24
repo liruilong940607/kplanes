@@ -7,9 +7,7 @@ import torch.nn as nn
 class SpatialDistortion(nn.Module):
     """Apply spatial distortions"""
 
-    def forward(
-        self, positions: torch.Tensor
-    ) -> torch.Tensor:
+    def forward(self, positions: torch.Tensor) -> torch.Tensor:
         """
         Args:
             positions: Sample to distort (shape: batch-size, ..., 3)
@@ -33,19 +31,22 @@ class SceneContraction(SpatialDistortion):
             order: Order of the norm. Default to the Frobenius norm. Must be set to None for Gaussians.
     """
 
-    def __init__(self,
-                 order: Optional[Union[float, int]] = None,
-                 global_translation: Optional[torch.Tensor] = None,
-                 global_scale: Optional[torch.Tensor] = None,
-                 ) -> None:
+    def __init__(
+        self,
+        order: Optional[Union[float, int]] = None,
+        global_translation: Optional[torch.Tensor] = None,
+        global_scale: Optional[torch.Tensor] = None,
+    ) -> None:
         super().__init__()
         self.order = order
         if global_translation is None:
             global_translation = torch.tensor([0.0, 0.0, 0.0])
-        self.global_translation = nn.Parameter(global_translation, requires_grad=False)
+        self.global_translation = nn.Parameter(
+            global_translation, requires_grad=False
+        )
         if global_scale is None:
             global_scale = torch.tensor([1.0, 1.0, 1.0])
-            
+
         self.global_scale = nn.Parameter(global_scale, requires_grad=False)
 
     def forward(self, positions):
@@ -58,10 +59,14 @@ class SceneContraction(SpatialDistortion):
         mag = torch.linalg.norm(positions, ord=self.order, dim=-1)
         mask = mag >= 1
         x_new = positions.clone()
-        x_new[mask] = (2 - (1 / mag[mask][..., None])) * (positions[mask] / mag[mask][..., None])
+        x_new[mask] = (2 - (1 / mag[mask][..., None])) * (
+            positions[mask] / mag[mask][..., None]
+        )
 
         return x_new
 
     def __str__(self):
-        return (f"SceneContraction(global_translation={self.global_translation}, "
-                f"global_scale={self.global_scale})")
+        return (
+            f"SceneContraction(global_translation={self.global_translation}, "
+            f"global_scale={self.global_scale})"
+        )

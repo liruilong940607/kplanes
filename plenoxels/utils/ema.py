@@ -1,5 +1,4 @@
-
-class EMA():
+class EMA:
     def __init__(self, weighting=0.9):
         self.weighting = weighting
         self.val = None

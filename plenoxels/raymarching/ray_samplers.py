@@ -19,7 +19,7 @@ limitations under the License.
 
 from abc import abstractmethod
 from dataclasses import dataclass
-from typing import Optional, Callable, Tuple, List
+from typing import Callable, List, Optional, Tuple
 
 import torch
 from torch import nn
@@ -28,6 +28,7 @@ from torch import nn
 @dataclass
 class RaySamples:
     """xyz coordinate for ray origin."""
+
     origins: torch.Tensor  # [bs:..., 3]
     """Direction of ray."""
     directions: torch.Tensor  # [bs:..., 3]
@@ -49,7 +50,9 @@ class RaySamples:
         Returns:
             xyz positions (..., 3).
         """
-        return self.origins + self.directions * (self.starts + self.ends) / 2  # world space
+        return (
+            self.origins + self.directions * (self.starts + self.ends) / 2
+        )  # world space
 
     def get_weights2(self, densities: torch.Tensor) -> torch.Tensor:
         densities = densities.squeeze(2)
@@ -64,8 +67,9 @@ class RaySamples:
         transmittance = torch.cat(
             (
                 torch.ones(alphas.shape[0], 1, device=alphas.device),
-                torch.cumprod(1.0 - alphas, dim=-1)
-            ), dim=-1
+                torch.cumprod(1.0 - alphas, dim=-1),
+            ),
+            dim=-1,
         )
         weights = alphas * transmittance[:, :-1]
         return weights[..., None]
@@ -86,7 +90,13 @@ class RaySamples:
 
         transmittance = torch.cumsum(delta_density[..., :-1, :], dim=-2)
         transmittance = torch.cat(
-            [torch.zeros((*transmittance.shape[:1], 1, 1), device=densities.device), transmittance], dim=-2
+            [
+                torch.zeros(
+                    (*transmittance.shape[:1], 1, 1), device=densities.device
+                ),
+                transmittance,
+            ],
+            dim=-2,
         )
         transmittance = torch.exp(-transmittance)  # [..., "num_samples"]
         weights = alphas * transmittance  # [..., "num_samples"]
@@ -202,14 +212,24 @@ class SpacedSampler(Sampler):
         assert num_samples is not None
         num_rays = ray_bundle.origins.shape[0]
 
-        bins = torch.linspace(0.0, 1.0, num_samples + 1).to(ray_bundle.origins.device)[None, ...]  # [1, num_samples+1]
+        bins = torch.linspace(0.0, 1.0, num_samples + 1).to(
+            ray_bundle.origins.device
+        )[
+            None, ...
+        ]  # [1, num_samples+1]
 
         # TODO More complicated than it needs to be.
         if self.train_stratified and self.training:
             if self.single_jitter:
-                t_rand = torch.rand((num_rays, 1), dtype=bins.dtype, device=bins.device)
+                t_rand = torch.rand(
+                    (num_rays, 1), dtype=bins.dtype, device=bins.device
+                )
             else:
-                t_rand = torch.rand((num_rays, num_samples + 1), dtype=bins.dtype, device=bins.device)
+                t_rand = torch.rand(
+                    (num_rays, num_samples + 1),
+                    dtype=bins.dtype,
+                    device=bins.device,
+                )
             bin_centers = (bins[..., 1:] + bins[..., :-1]) / 2.0
             bin_upper = torch.cat([bin_centers, bins[..., -1:]], -1)
             bin_lower = torch.cat([bins[..., :1], bin_centers], -1)
@@ -218,16 +238,22 @@ class SpacedSampler(Sampler):
             bins = bins.repeat(num_rays, 1)
 
         # s_near, s_far in [0, 1]
-        s_near, s_far = (self.spacing_fn(x) for x in (ray_bundle.nears, ray_bundle.fars))
-        spacing_to_euclidean_fn = lambda x: self.spacing_fn_inv(x * s_far + (1 - x) * s_near)
+        s_near, s_far = (
+            self.spacing_fn(x) for x in (ray_bundle.nears, ray_bundle.fars)
+        )
+        spacing_to_euclidean_fn = lambda x: self.spacing_fn_inv(
+            x * s_far + (1 - x) * s_near
+        )
         # euclidean = world
-        euclidean_bins = spacing_to_euclidean_fn(bins)  # [num_rays, num_samples+1]
+        euclidean_bins = spacing_to_euclidean_fn(
+            bins
+        )  # [num_rays, num_samples+1]
 
         return ray_bundle.get_ray_samples(
             bin_starts=euclidean_bins[..., :-1, None],  # world [near, far]
-            bin_ends=euclidean_bins[..., 1:, None],     # world [near, far]
-            spacing_starts=bins[..., :-1, None],        # [0, 1]
-            spacing_ends=bins[..., 1:, None],           # [0, 1]
+            bin_ends=euclidean_bins[..., 1:, None],  # world [near, far]
+            spacing_starts=bins[..., :-1, None],  # [0, 1]
+            spacing_ends=bins[..., 1:, None],  # [0, 1]
             spacing_to_euclidean_fn=spacing_to_euclidean_fn,
         )
 
@@ -296,7 +322,9 @@ class UniformLinDispPiecewiseSampler(SpacedSampler):
         super().__init__(
             num_samples=num_samples,
             spacing_fn=lambda x: torch.where(x < 1, x / 2, 1 - 1 / (2 * x)),
-            spacing_fn_inv=lambda x: torch.where(x < 0.5, 2 * x, 1 / (2 - 2 * x)),
+            spacing_fn_inv=lambda x: torch.where(
+                x < 0.5, 2 * x, 1 / (2 - 2 * x)
+            ),
             train_stratified=train_stratified,
             single_jitter=single_jitter,
         )
@@ -366,24 +394,39 @@ class PDFSampler(Sampler):
 
         if self.train_stratified and self.training:
             # Stratified samples between 0 and 1
-            u = torch.linspace(0.0, 1.0 - (1.0 / num_bins), steps=num_bins, device=cdf.device)
+            u = torch.linspace(
+                0.0, 1.0 - (1.0 / num_bins), steps=num_bins, device=cdf.device
+            )
             u = u.expand((*cdf.shape[:-1], num_bins))
             if self.single_jitter:
-                rand = torch.rand((*cdf.shape[:-1], 1), device=cdf.device) / num_bins
+                rand = (
+                    torch.rand((*cdf.shape[:-1], 1), device=cdf.device)
+                    / num_bins
+                )
             else:
-                rand = torch.rand((*cdf.shape[:-1], num_samples + 1), device=cdf.device) / num_bins
+                rand = (
+                    torch.rand(
+                        (*cdf.shape[:-1], num_samples + 1), device=cdf.device
+                    )
+                    / num_bins
+                )
             u = u + rand
         else:
             # Uniform samples between 0 and 1
-            u = torch.linspace(0.0, 1.0 - (1.0 / num_bins), steps=num_bins, device=cdf.device)
+            u = torch.linspace(
+                0.0, 1.0 - (1.0 / num_bins), steps=num_bins, device=cdf.device
+            )
             u = u + 1.0 / (2 * num_bins)
             u = u.expand(size=(*cdf.shape[:-1], num_bins))
         u = u.contiguous()
 
         assert (
-            ray_samples.spacing_starts is not None and ray_samples.spacing_ends is not None
+            ray_samples.spacing_starts is not None
+            and ray_samples.spacing_ends is not None
         ), "ray_sample spacing_starts and spacing_ends must be provided"
-        assert ray_samples.spacing_to_euclidean_fn is not None, "ray_samples.spacing_to_euclidean_fn must be provided"
+        assert (
+            ray_samples.spacing_to_euclidean_fn is not None
+        ), "ray_samples.spacing_to_euclidean_fn must be provided"
         existing_bins = torch.cat(
             [
                 ray_samples.spacing_starts[..., 0],
@@ -400,7 +443,9 @@ class PDFSampler(Sampler):
         cdf_g1 = torch.gather(cdf, -1, above)
         bins_g1 = torch.gather(existing_bins, -1, above)
 
-        t = torch.clip(torch.nan_to_num((u - cdf_g0) / (cdf_g1 - cdf_g0), 0), 0, 1)
+        t = torch.clip(
+            torch.nan_to_num((u - cdf_g0) / (cdf_g1 - cdf_g0), 0), 0, 1
+        )
         bins = bins_g0 + t * (bins_g1 - bins_g0)
 
         if self.include_original:
@@ -422,6 +467,7 @@ class PDFSampler(Sampler):
 
 class ProposalNetworkSampler(Sampler):
     """Sampler that uses a proposal network to generate samples."""
+
     def __init__(
         self,
         num_proposal_samples_per_ray: Tuple[int] = (64,),
@@ -441,9 +487,13 @@ class ProposalNetworkSampler(Sampler):
 
         # samplers
         if initial_sampler is None:
-            initial_sampler = UniformLinDispPiecewiseSampler(single_jitter=single_jitter)
+            initial_sampler = UniformLinDispPiecewiseSampler(
+                single_jitter=single_jitter
+            )
         self.initial_sampler = initial_sampler
-        self.pdf_sampler = PDFSampler(include_original=False, single_jitter=single_jitter)
+        self.pdf_sampler = PDFSampler(
+            include_original=False, single_jitter=single_jitter
+        )
 
         self._anneal = 1.0
         self._steps_since_update = 0
@@ -474,26 +524,44 @@ class ProposalNetworkSampler(Sampler):
         n = self.num_proposal_network_iterations
         weights = None
         ray_samples = None
-        updated = self._steps_since_update > self.update_sched(self._step) or self._step < 10
+        updated = (
+            self._steps_since_update > self.update_sched(self._step)
+            or self._step < 10
+        )
         for i_level in range(n + 1):
             is_prop = i_level < n
-            num_samples = self.num_proposal_samples_per_ray[i_level] if is_prop else self.num_nerf_samples_per_ray
+            num_samples = (
+                self.num_proposal_samples_per_ray[i_level]
+                if is_prop
+                else self.num_nerf_samples_per_ray
+            )
             if i_level == 0:
                 # Uniform sampling because we need to start with some samples
-                ray_samples = self.initial_sampler(ray_bundle, num_samples=num_samples)
+                ray_samples = self.initial_sampler(
+                    ray_bundle, num_samples=num_samples
+                )
             else:
                 # PDF sampling based on the last samples and their weights
                 # Perform annealing to the weights. This will be a no-op if self._anneal is 1.0.
                 assert weights is not None
                 annealed_weights = torch.pow(weights, self._anneal)
-                ray_samples = self.pdf_sampler(ray_bundle, ray_samples, annealed_weights, num_samples=num_samples)
+                ray_samples = self.pdf_sampler(
+                    ray_bundle,
+                    ray_samples,
+                    annealed_weights,
+                    num_samples=num_samples,
+                )
             if is_prop:
                 if updated:
                     # always update on the first step or the inf check in grad scaling crashes
-                    density = density_fns[i_level](ray_samples.get_positions(), timestamps)  # world space
+                    density = density_fns[i_level](
+                        ray_samples.get_positions(), timestamps
+                    )  # world space
                 else:
                     with torch.no_grad():
-                        density = density_fns[i_level](ray_samples.get_positions(), timestamps)
+                        density = density_fns[i_level](
+                            ray_samples.get_positions(), timestamps
+                        )
                 weights = ray_samples.get_weights(density)
                 weights_list.append(weights)  # (num_rays, num_samples)
                 ray_samples_list.append(ray_samples)
@@ -504,7 +572,9 @@ class ProposalNetworkSampler(Sampler):
         return ray_samples, weights_list, ray_samples_list
 
     def __str__(self):
-        return (f"ProposalNetworkSampler("
-                f"num_proposal_samples_per_ray={self.num_proposal_samples_per_ray}, "
-                f"num_nerf_samples_per_ray={self.num_nerf_samples_per_ray}, "
-                f"num_proposal_network_iterations={self.num_proposal_network_iterations})")
+        return (
+            f"ProposalNetworkSampler("
+            f"num_proposal_samples_per_ray={self.num_proposal_samples_per_ray}, "
+            f"num_nerf_samples_per_ray={self.num_nerf_samples_per_ray}, "
+            f"num_proposal_network_iterations={self.num_proposal_network_iterations})"
+        )

@@ -1,7 +1,7 @@
 """Evaluate several metrics for a pretrained model. Handles video and static."""
-import re
 import glob
 import os
+import re
 from collections import defaultdict
 
 import numpy as np
@@ -25,12 +25,14 @@ def eval_static_metrics(static_dir):
         files_per_step[step].append(f)
     steps = list(files_per_step.keys())
     max_step = max(steps)
-    print(f"Evaluating static metrics for {static_dir} at step "
-          f"{max_step} with {len(files_per_step[max_step])} files.")
+    print(
+        f"Evaluating static metrics for {static_dir} at step "
+        f"{max_step} with {len(files_per_step[max_step])} files."
+    )
     frames = [read_png(f) for f in files_per_step[max_step]]
     h1 = frames[0].shape[0] // 3
     pred_frames = [f[:h1] for f in frames]
-    gt_frames = [f[h1:2*h1] for f in frames]
+    gt_frames = [f[h1 : 2 * h1] for f in frames]
 
     psnrs, ssims, msssims, lpipss = [], [], [], []
     for pred, gt in zip(pred_frames, gt_frames):
@@ -56,7 +58,7 @@ def eval_video_metrics(video_path):
     frames = read_mp4(video_path)
     h1 = frames[0].shape[0] // 3
     pred_frames = [f[:h1].numpy() for f in frames]
-    gt_frames = [f[h1:2*h1].numpy() for f in frames]
+    gt_frames = [f[h1 : 2 * h1].numpy() for f in frames]
 
     psnrs, ssims, msssims, lpipss = [], [], [], []
     for pred, gt in zip(pred_frames, gt_frames):
@@ -71,7 +73,9 @@ def eval_video_metrics(video_path):
     msssim = np.mean(msssims)
     lpips = np.mean(lpipss)
 
-    flip = metrics.flip(pred_frames=pred_frames, gt_frames=gt_frames, interval=10)
+    flip = metrics.flip(
+        pred_frames=pred_frames, gt_frames=gt_frames, interval=10
+    )
     # jod = metrics.jod(pred_frames=pred_frames, gt_frames=gt_frames)
 
     print()
@@ -86,10 +90,21 @@ def eval_video_metrics(video_path):
     print()
 
 
-dnerf_scenes = ['hellwarrior', 'mutant', 'hook', 'bouncingballs', 'lego', 'trex', 'standup', 'jumpingjacks']
-types = ['linear', 'mlp']
+dnerf_scenes = [
+    "hellwarrior",
+    "mutant",
+    "hook",
+    "bouncingballs",
+    "lego",
+    "trex",
+    "standup",
+    "jumpingjacks",
+]
+types = ["linear", "mlp"]
 
 if __name__ == "__main__":
     for modeltype in types:
         for scene in dnerf_scenes:
-            eval_video_metrics(f"logs/dnerf_{modeltype}_refactor1/{scene}_concat32_lr0.01_time0.1_tv0.0001_proptime0.001_proptv0.0001_distort0/step30000.mp4")
+            eval_video_metrics(
+                f"logs/dnerf_{modeltype}_refactor1/{scene}_concat32_lr0.01_time0.1_tv0.0001_proptime0.001_proptv0.0001_distort0/step30000.mp4"
+            )

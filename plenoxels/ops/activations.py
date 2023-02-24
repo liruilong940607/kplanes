@@ -30,9 +30,9 @@ trunc_exp = TruncatedExponential.apply
 
 
 def init_density_activation(activation_type: str):
-    if activation_type == 'trunc_exp':
+    if activation_type == "trunc_exp":
         return lambda x: trunc_exp(x - 1)
-    elif activation_type == 'relu':
+    elif activation_type == "relu":
         return F.relu
     else:
         raise ValueError(activation_type)

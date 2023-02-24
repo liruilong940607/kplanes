@@ -31,3 +31,5 @@ autodidact/
 assets/
 
 tmp
+
+.envrc

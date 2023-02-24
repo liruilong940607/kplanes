@@ -1,14 +1,14 @@
 import glob
+import logging as log
 import os
 from typing import List, Optional
 
 import cv2
+import imageio.v3 as iio
+import numpy as np
 import torch
 import torchvision.transforms.functional as TF
 from PIL import Image
-import logging as log
-import numpy as np
-import imageio.v3 as iio
 
 
 def write_png(path, data):
@@ -24,10 +24,13 @@ def write_png(path, data):
     Image.fromarray(data).save(path)
 
 
-def read_png(file_name: str, resize_h: Optional[int] = None, resize_w: Optional[int] = None) -> torch.Tensor:
-    """Reads a PNG image from path, potentially resizing it.
-    """
-    img = Image.open(file_name).convert('RGB')  # PIL outputs BGR by default
+def read_png(
+    file_name: str,
+    resize_h: Optional[int] = None,
+    resize_w: Optional[int] = None,
+) -> torch.Tensor:
+    """Reads a PNG image from path, potentially resizing it."""
+    img = Image.open(file_name).convert("RGB")  # PIL outputs BGR by default
     if resize_h is not None and resize_w is not None:
         img.resize((resize_w, resize_h), Image.LANCZOS)
     img = TF.to_tensor(img)  # TF converts to C, H, W
@@ -46,7 +49,7 @@ def glob_imgs(path, exts=None):
         (list of str): List of paths that were found.
     """
     if exts is None:
-        exts = ['*.png', '*.PNG', '*.jpg', '*.jpeg', '*.JPG', '*.JPEG']
+        exts = ["*.png", "*.PNG", "*.jpg", "*.jpeg", "*.JPG", "*.JPEG"]
     imgs = []
     for ext in exts:
         imgs.extend(glob.glob(os.path.join(path, ext)))
@@ -61,7 +64,8 @@ def write_video_to_file(file_name, frames: List[np.ndarray]):
     if same_size_frames:
         height, width = frames[0].shape[:2]
         video = cv2.VideoWriter(
-            file_name, cv2.VideoWriter_fourcc(*'mp4v'), 30, (width, height))
+            file_name, cv2.VideoWriter_fourcc(*"mp4v"), 30, (width, height)
+        )
         for img in frames:
             if isinstance(img, torch.Tensor):
                 img = img.numpy()
@@ -72,13 +76,18 @@ def write_video_to_file(file_name, frames: List[np.ndarray]):
         height = sizes[:, 0].max()
         width = sizes[:, 1].max()
         video = cv2.VideoWriter(
-            file_name, cv2.VideoWriter_fourcc(*'mp4v'), 5, (width, height))
+            file_name, cv2.VideoWriter_fourcc(*"mp4v"), 5, (width, height)
+        )
         for img in frames:
             image = np.zeros((height, width, 3), dtype=np.uint8)
             h, w = img.shape[:2]
             if isinstance(img, torch.Tensor):
                 img = img.numpy()
-            image[(height-h)//2:(height-h)//2+h, (width-w)//2:(width-w)//2+w, :] = img
+            image[
+                (height - h) // 2 : (height - h) // 2 + h,
+                (width - w) // 2 : (width - w) // 2 + w,
+                :,
+            ] = img
             video.write(image[:, :, ::-1])  # opencv uses BGR instead of RGB
         cv2.destroyAllWindows()
         video.release()
@@ -86,7 +95,11 @@ def write_video_to_file(file_name, frames: List[np.ndarray]):
 
 def read_mp4(file_name: str) -> List[torch.Tensor]:
     all_frames = iio.imread(
-        file_name, plugin='pyav', format='rgb24', constant_framerate=True, thread_count=2
+        file_name,
+        plugin="pyav",
+        format="rgb24",
+        constant_framerate=True,
+        thread_count=2,
     )
     out_frames = [torch.from_numpy(f) for f in all_frames]
     return out_frames

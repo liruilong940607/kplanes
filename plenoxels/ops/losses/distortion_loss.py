@@ -5,7 +5,9 @@ def ray_samples_to_sdist(ray_samples):
     """Convert ray samples to s space"""
     starts = ray_samples.spacing_starts
     ends = ray_samples.spacing_ends
-    sdist = torch.cat([starts[..., 0], ends[..., -1:, 0]], dim=-1)  # (num_rays, num_samples + 1)
+    sdist = torch.cat(
+        [starts[..., 0], ends[..., -1:, 0]], dim=-1
+    )  # (num_rays, num_samples + 1)
     return sdist
 
 
@@ -16,7 +18,9 @@ def lossfun_distortion(t, w):
     """
     ut = (t[..., 1:] + t[..., :-1]) / 2
     dut = torch.abs(ut[..., :, None] - ut[..., None, :])
-    loss_inter = torch.sum(w * torch.sum(w[..., None, :] * dut, dim=-1), dim=-1)
+    loss_inter = torch.sum(
+        w * torch.sum(w[..., None, :] * dut, dim=-1), dim=-1
+    )
 
     loss_intra = torch.sum(w**2 * (t[..., 1:] - t[..., :-1]), dim=-1) / 3
 

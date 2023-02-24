@@ -1,19 +1,21 @@
 """Entry point for simple renderings, given a trainer and some poses."""
-import os
 import logging as log
+import os
 from typing import Union
 
 import torch
 
 from plenoxels.models.lowrank_model import LowrankModel
-from plenoxels.utils.my_tqdm import tqdm
 from plenoxels.ops.image.io import write_video_to_file
 from plenoxels.runners.static_trainer import StaticTrainer
 from plenoxels.runners.video_trainer import VideoTrainer
+from plenoxels.utils.my_tqdm import tqdm
 
 
 @torch.no_grad()
-def render_to_path(trainer: Union[VideoTrainer, StaticTrainer], extra_name: str = "") -> None:
+def render_to_path(
+    trainer: Union[VideoTrainer, StaticTrainer], extra_name: str = ""
+) -> None:
     """Render all poses in the `test_dataset`, saving them to file
     Args:
         trainer: The trainer object which is used for rendering
@@ -43,7 +45,9 @@ def render_to_path(trainer: Union[VideoTrainer, StaticTrainer], extra_name: str 
         pb.update(1)
     pb.close()
 
-    out_fname = os.path.join(trainer.log_dir, f"rendering_path_{extra_name}.mp4")
+    out_fname = os.path.join(
+        trainer.log_dir, f"rendering_path_{extra_name}.mp4"
+    )
     write_video_to_file(out_fname, frames)
     log.info(f"Saved rendering path with {len(frames)} frames to {out_fname}")
 
@@ -87,7 +91,10 @@ def decompose_space_time(trainer: StaticTrainer, extra_name: str = "") -> None:
 
     num_frames = img_idx + 1
     frames = []
-    for img_idx in tqdm(range(num_frames), desc="Rendering scene with separate space and time components"):
+    for img_idx in tqdm(
+        range(num_frames),
+        desc="Rendering scene with separate space and time components",
+    ):
         # Linearly interpolated timestamp, normalized between -1, 1
         camdata["timestamps"] = torch.Tensor([img_idx / num_frames]) * 2 - 1
 
@@ -102,17 +109,23 @@ def decompose_space_time(trainer: StaticTrainer, extra_name: str = "") -> None:
                 model.field.grids[i][plane_idx].data = parameters[i][plane_idx]
         for i in range(len(model.proposal_networks)):
             for plane_idx in [2, 4, 5]:
-                model.proposal_networks[i].grids[plane_idx].data = pn_parameters[i][plane_idx]
+                model.proposal_networks[i].grids[
+                    plane_idx
+                ].data = pn_parameters[i][plane_idx]
         preds = trainer.eval_step(camdata)
         full_out = preds["rgb"].reshape(img_h, img_w, 3).cpu()
 
         # Space-only model: turn off time-planes
         for i in range(len(model.field.grids)):
             for plane_idx in [2, 4, 5]:  # time-grids off
-                model.field.grids[i][plane_idx].data = torch.ones_like(parameters[i][plane_idx])
+                model.field.grids[i][plane_idx].data = torch.ones_like(
+                    parameters[i][plane_idx]
+                )
         for i in range(len(model.proposal_networks)):
             for plane_idx in [2, 4, 5]:
-                model.proposal_networks[i].grids[plane_idx].data = torch.ones_like(pn_parameters[i][plane_idx])
+                model.proposal_networks[i].grids[
+                    plane_idx
+                ].data = torch.ones_like(pn_parameters[i][plane_idx])
         preds = trainer.eval_step(camdata)
         spatial_out = preds["rgb"].reshape(img_h, img_w, 3).cpu()
 
@@ -121,10 +134,10 @@ def decompose_space_time(trainer: StaticTrainer, extra_name: str = "") -> None:
 
         frames.append(
             torch.cat([full_out, spatial_out, temporal_out], dim=1)
-                 .clamp(0, 1)
-                 .mul(255.0)
-                 .byte()
-                 .numpy()
+            .clamp(0, 1)
+            .mul(255.0)
+            .byte()
+            .numpy()
         )
 
     out_fname = os.path.join(trainer.log_dir, f"spacetime_{extra_name}.mp4")
