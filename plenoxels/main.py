@@ -133,6 +133,7 @@ def main():
     p.add_argument("--config-path", type=str, required=True)
     p.add_argument("--log-dir", type=str, default=None)
     p.add_argument("--seed", type=int, default=0)
+    p.add_argument("--data-dir", type=str, default=None)
     p.add_argument("override", nargs=argparse.REMAINDER)
 
     args = p.parse_args()
@@ -157,6 +158,8 @@ def main():
     overrides_dict = {
         ovr.split("=")[0]: ovr.split("=")[1] for ovr in overrides
     }
+    if args.data_dir is not None:
+        overrides_dict["data_dirs"] = [args.data_dir]
     config.update(overrides_dict)
     if "keyframes" in config:
         model_type = "video"

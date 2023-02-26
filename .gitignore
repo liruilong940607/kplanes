@@ -32,4 +32,6 @@ assets/
 
 tmp
 
+data
+logs
 .envrc

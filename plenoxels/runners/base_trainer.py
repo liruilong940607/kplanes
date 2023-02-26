@@ -17,8 +17,6 @@ from typing import (
 import numpy as np
 import torch
 import torch.utils.data
-from torch.utils.tensorboard import SummaryWriter
-
 from plenoxels.models.lowrank_model import LowrankModel
 from plenoxels.ops.image import metrics
 from plenoxels.ops.image.io import write_png
@@ -30,6 +28,7 @@ from plenoxels.runners.regularization import Regularizer
 from plenoxels.utils.ema import EMA
 from plenoxels.utils.my_tqdm import tqdm
 from plenoxels.utils.timer import CudaTimer
+from torch.utils.tensorboard import SummaryWriter
 
 
 class BaseTrainer(abc.ABC):

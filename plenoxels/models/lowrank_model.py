@@ -1,9 +1,9 @@
 from typing import Dict, List, Optional, Sequence, Tuple, Union
 
+import nerfacc
 import numpy as np
 import torch
 import torch.nn as nn
-
 from plenoxels.models.density_fields import KPlaneDensityField
 from plenoxels.models.kplane_field import KPlaneField
 from plenoxels.ops.activations import init_density_activation
@@ -38,6 +38,10 @@ class LowrankModel(nn.Module):
         # Spatial distortion
         global_translation: Optional[torch.Tensor] = None,
         global_scale: Optional[torch.Tensor] = None,
+        # occ-sampling arguments
+        occ_grid_reso: int = -1,
+        occ_step_size: float = 1e-3,
+        occ_alpha_thres: float = 0.0,
         # proposal-sampling arguments
         num_proposal_iterations: int = 1,
         use_same_proposal_network: bool = False,
@@ -92,6 +96,16 @@ class LowrankModel(nn.Module):
             num_images=num_images,
         )
 
+        self.occ_grid_reso = int(occ_grid_reso)
+        self.use_occ_grid = self.occ_grid_reso > 0
+        self.occ_grid = None
+        self.occ_step_size = float(occ_step_size)
+        self.occ_alpha_thres = float(occ_alpha_thres)
+        if self.use_occ_grid > 0:
+            self.occupancy_grid = nerfacc.OccupancyGrid(
+                roi_aabb=aabb.reshape(-1), resolution=self.occ_grid_reso
+            )
+
         # Initialize proposal-sampling nets
         self.density_fns = []
         self.num_proposal_iterations = num_proposal_iterations
@@ -140,32 +154,47 @@ class LowrankModel(nn.Module):
                 [network.get_density for network in self.proposal_networks]
             )
 
-        update_schedule = lambda step: np.clip(
-            np.interp(
-                step,
-                [0, self.proposal_warmup],
-                [0, self.proposal_update_every],
-            ),
-            1,
-            self.proposal_update_every,
-        )
-        if self.is_contracted or self.is_ndc:
-            initial_sampler = UniformLinDispPiecewiseSampler(
-                single_jitter=single_jitter
+            update_schedule = lambda step: np.clip(
+                np.interp(
+                    step,
+                    [0, self.proposal_warmup],
+                    [0, self.proposal_update_every],
+                ),
+                1,
+                self.proposal_update_every,
             )
-        else:
-            initial_sampler = UniformSampler(single_jitter=single_jitter)
-        self.proposal_sampler = ProposalNetworkSampler(
-            num_nerf_samples_per_ray=num_samples,
-            num_proposal_samples_per_ray=num_proposal_samples,
-            num_proposal_network_iterations=self.num_proposal_iterations,
-            single_jitter=single_jitter,
-            update_sched=update_schedule,
-            initial_sampler=initial_sampler,
-        )
+            if self.is_contracted or self.is_ndc:
+                initial_sampler = UniformLinDispPiecewiseSampler(
+                    single_jitter=single_jitter
+                )
+            else:
+                initial_sampler = UniformSampler(single_jitter=single_jitter)
+            self.proposal_sampler = ProposalNetworkSampler(
+                num_nerf_samples_per_ray=num_samples,
+                num_proposal_samples_per_ray=num_proposal_samples,
+                num_proposal_network_iterations=self.num_proposal_iterations,
+                single_jitter=single_jitter,
+                update_sched=update_schedule,
+                initial_sampler=initial_sampler,
+            )
 
     def step_before_iter(self, step):
-        if self.use_proposal_weight_anneal:
+        if self.use_occ_grid and self.training:
+
+            def occ_eval_fn(x):
+                requires_timestamps = len(self.field.grids[0]) == 6
+                density = self.field.get_density(
+                    x[:, None],
+                    timestamps=torch.rand_like(x[:, 0]) * 2 - 1
+                    if requires_timestamps
+                    else None,
+                )[0][:, 0]
+                return density * self.occ_step_size
+
+            self.occupancy_grid.every_n_step(
+                step=step, occ_eval_fn=occ_eval_fn, ema_decay=0.99
+            )
+        elif self.use_proposal_weight_anneal:
             # anneal the weights of the proposal network before doing PDF sampling
             N = self.proposal_weights_anneal_max_num_iters
             # https://arxiv.org/pdf/2111.12077.pdf eq. 18
@@ -175,7 +204,7 @@ class LowrankModel(nn.Module):
             self.proposal_sampler.set_anneal(anneal)
 
     def step_after_iter(self, step):
-        if self.use_proposal_weight_anneal:
+        if not self.use_occ_grid and self.use_proposal_weight_anneal:
             self.proposal_sampler.step_cb(step)
 
     @staticmethod
@@ -225,53 +254,107 @@ class LowrankModel(nn.Module):
             nears = ones * nears
             fars = ones * fars
 
-        ray_bundle = RayBundle(
-            origins=rays_o, directions=rays_d, nears=nears, fars=fars
-        )
-        # Note: proposal sampler mustn't use timestamps (=camera-IDs) with appearance-embedding,
-        #       since the appearance embedding should not affect density. We still pass them in the
-        #       call below, but they will not be used as long as density-field resolutions
-        #       are be 3D.
-        (
-            ray_samples,
-            weights_list,
-            ray_samples_list,
-        ) = self.proposal_sampler.generate_ray_samples(
-            ray_bundle, timestamps=timestamps, density_fns=self.density_fns
-        )
+        rgb = accumulation = depth = None
+        if self.use_occ_grid:
 
-        field_out = self.field(
-            ray_samples.get_positions(), ray_bundle.directions, timestamps
-        )
-        rgb, density = field_out["rgb"], field_out["density"]
+            def sigma_fn(t_starts, t_ends, ray_indices):
+                t_origins = rays_o[ray_indices]
+                if t_origins.shape[0] == 0:
+                    return torch.zeros((0, 1), device=t_origins.device)
+                t_dirs = rays_d[ray_indices]
+                t_times = (
+                    timestamps[ray_indices] if timestamps is not None else None
+                )
+                positions = t_origins + t_dirs * (t_starts + t_ends) / 2.0
+                return self.field.get_density(positions[:, None], t_times)[0][
+                    :, 0
+                ]
 
-        weights = ray_samples.get_weights(density)
-        weights_list.append(weights)
-        ray_samples_list.append(ray_samples)
+            def rgb_sigma_fn(t_starts, t_ends, ray_indices):
+                t_origins = rays_o[ray_indices]
+                if t_origins.shape[0] == 0:
+                    return torch.zeros(
+                        (0, 3), device=t_origins.device
+                    ), torch.zeros((0, 1), device=t_origins.device)
+                t_dirs = rays_d[ray_indices]
+                t_times = (
+                    timestamps[ray_indices] if timestamps is not None else None
+                )
+                positions = t_origins + t_dirs * (t_starts + t_ends) / 2.0
+                field_out = self.field(
+                    positions[:, None], t_dirs[:, None], t_times
+                )
+                return field_out["rgb"][:, 0], field_out["density"][:, 0]
 
-        rgb = self.render_rgb(rgb=rgb, weights=weights, bg_color=bg_color)
-        depth = self.render_depth(
-            weights=weights,
-            ray_samples=ray_samples,
-            rays_d=ray_bundle.directions,
-        )
-        accumulation = self.render_accumulation(weights=weights)
+            ray_indices, t_starts, t_ends = nerfacc.ray_marching(
+                rays_o,
+                rays_d,
+                scene_aabb=self.field.aabb.reshape(-1),
+                grid=self.occupancy_grid,
+                sigma_fn=sigma_fn,
+                near_plane=nears[..., 0],
+                far_plane=fars[..., 0],
+                render_step_size=self.occ_step_size,
+                stratified=self.training,
+                alpha_thre=self.occ_alpha_thres,
+            )
+            rgb, accumulation, depth = nerfacc.rendering(
+                t_starts,
+                t_ends,
+                ray_indices,
+                n_rays=rays_o.shape[0],
+                rgb_sigma_fn=rgb_sigma_fn,
+                render_bkgd=bg_color[0],
+            )
+        else:
+            ray_bundle = RayBundle(
+                origins=rays_o, directions=rays_d, nears=nears, fars=fars
+            )
+            # Note: proposal sampler mustn't use timestamps (=camera-IDs) with appearance-embedding,
+            #       since the appearance embedding should not affect density. We still pass them in the
+            #       call below, but they will not be used as long as density-field resolutions
+            #       are be 3D.
+            (
+                ray_samples,
+                weights_list,
+                ray_samples_list,
+            ) = self.proposal_sampler.generate_ray_samples(
+                ray_bundle, timestamps=timestamps, density_fns=self.density_fns
+            )
+
+            field_out = self.field(
+                ray_samples.get_positions(), ray_bundle.directions, timestamps
+            )
+            rgb, density = field_out["rgb"], field_out["density"]
+
+            weights = ray_samples.get_weights(density)
+            weights_list.append(weights)
+            ray_samples_list.append(ray_samples)
+
+            rgb = self.render_rgb(rgb=rgb, weights=weights, bg_color=bg_color)
+            depth = self.render_depth(
+                weights=weights,
+                ray_samples=ray_samples,
+                rays_d=ray_bundle.directions,
+            )
+            accumulation = self.render_accumulation(weights=weights)
         outputs = {
             "rgb": rgb,
             "accumulation": accumulation,
             "depth": depth,
         }
 
-        # These use a lot of GPU memory, so we avoid storing them for eval.
-        if self.training:
-            outputs["weights_list"] = weights_list
-            outputs["ray_samples_list"] = ray_samples_list
-        for i in range(self.num_proposal_iterations):
-            outputs[f"prop_depth_{i}"] = self.render_depth(
-                weights=weights_list[i],
-                ray_samples=ray_samples_list[i],
-                rays_d=ray_bundle.directions,
-            )
+        if not self.use_occ_grid:
+            # These use a lot of GPU memory, so we avoid storing them for eval.
+            if self.training:
+                outputs["weights_list"] = weights_list  # type: ignore
+                outputs["ray_samples_list"] = ray_samples_list  # type: ignore
+            for i in range(self.num_proposal_iterations):
+                outputs[f"prop_depth_{i}"] = self.render_depth(
+                    weights=weights_list[i],  # type: ignore
+                    ray_samples=ray_samples_list[i],  # type: ignore
+                    rays_d=ray_bundle.directions,  # type: ignore
+                )
         return outputs
 
     def get_params(self, lr: float):

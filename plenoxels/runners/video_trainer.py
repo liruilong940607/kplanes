@@ -7,7 +7,6 @@ from typing import Any, Dict, List, MutableMapping, Union
 import pandas as pd
 import torch
 import torch.utils.data
-
 from plenoxels.datasets.video_datasets import Video360Dataset
 from plenoxels.models.lowrank_model import LowrankModel
 from plenoxels.ops.image import metrics
@@ -209,25 +208,30 @@ class VideoTrainer(BaseTrainer):
     def get_regularizers(self, **kwargs):
         return [
             PlaneTV(kwargs.get("plane_tv_weight", 0.0), what="field"),
-            PlaneTV(
-                kwargs.get("plane_tv_weight_proposal_net", 0.0),
-                what="proposal_network",
-            ),
             L1TimePlanes(kwargs.get("l1_time_planes", 0.0), what="field"),
-            L1TimePlanes(
-                kwargs.get("l1_time_planes_proposal_net", 0.0),
-                what="proposal_network",
-            ),
             TimeSmoothness(
                 kwargs.get("time_smoothness_weight", 0.0), what="field"
             ),
-            TimeSmoothness(
-                kwargs.get("time_smoothness_weight_proposal_net", 0.0),
-                what="proposal_network",
-            ),
-            HistogramLoss(kwargs.get("histogram_loss_weight", 0.0)),
             DistortionLoss(kwargs.get("distortion_loss_weight", 0.0)),
-        ]
+        ] + (
+            [
+                PlaneTV(
+                    kwargs.get("plane_tv_weight_proposal_net", 0.0),
+                    what="proposal_network",
+                ),
+                L1TimePlanes(
+                    kwargs.get("l1_time_planes_proposal_net", 0.0),
+                    what="proposal_network",
+                ),
+                TimeSmoothness(
+                    kwargs.get("time_smoothness_weight_proposal_net", 0.0),
+                    what="proposal_network",
+                ),
+                HistogramLoss(kwargs.get("histogram_loss_weight", 0.0)),
+            ]
+            if not self.model.use_occ_grid
+            else []
+        )
 
     @property
     def calc_metrics_every(self):

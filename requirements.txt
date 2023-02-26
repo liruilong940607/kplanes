@@ -1,11 +1,10 @@
-jax
+-f https://download.pytorch.org/whl/cu117
+torch==1.13.1
+torchmetrics
 tqdm
-torch
 pillow
 opencv-python
 pandas
 lpips
 imageio
-torchmetrics
 scikit-image
-tinycudann
