@@ -214,8 +214,8 @@ class BaseTrainer(abc.ABC):
             "psnr": metrics.psnr(preds, gt),
             "ssim": metrics.ssim(preds, gt),
             "ms-ssim": metrics.msssim(preds, gt),
-            #"alex_lpips": metrics.rgb_lpips(preds, gt, net_name='alex', device=err.device),
-            #"vgg_lpips": metrics.rgb_lpips(preds, gt, net_name='vgg', device=err.device)
+            "alex_lpips": metrics.rgb_lpips(preds, gt, net_name='alex', device=err.device),
+            "vgg_lpips": metrics.rgb_lpips(preds, gt, net_name='vgg', device=err.device)
         }
 
     def evaluate_metrics(self,

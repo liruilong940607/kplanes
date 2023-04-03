@@ -94,7 +94,7 @@ class LowrankModel(nn.Module):
         self.occ_step_size = float(occ_step_size)
         self.occ_alpha_thres = float(occ_alpha_thres)
         if self.use_occ_grid > 0:
-            self.occupancy_grid = nerfacc.OccupancyGrid(
+            self.occupancy_grid = nerfacc.OccGridEstimator(
                 roi_aabb=aabb.reshape(-1), resolution=self.occ_grid_reso
             )
 
@@ -156,7 +156,7 @@ class LowrankModel(nn.Module):
                 )[0][:, 0]
                 return density * self.occ_step_size
 
-            self.occupancy_grid.every_n_step(
+            self.occupancy_grid.update_every_n_steps(
                 step=step, occ_eval_fn=occ_eval_fn, ema_decay=0.99
             )
         elif self.use_proposal_weight_anneal:
@@ -214,45 +214,43 @@ class LowrankModel(nn.Module):
             def sigma_fn(t_starts, t_ends, ray_indices):
                 t_origins = rays_o[ray_indices]
                 if t_origins.shape[0] == 0:
-                    return torch.zeros((0, 1), device=t_origins.device)
+                    return torch.zeros((0,), device=t_origins.device)
                 t_dirs = rays_d[ray_indices]
                 t_times = (
                     timestamps[ray_indices] if timestamps is not None else None
                 )
-                positions = t_origins + t_dirs * (t_starts + t_ends) / 2.0
+                positions = t_origins + t_dirs * (t_starts + t_ends)[:, None] / 2.0
                 return self.field.get_density(positions[:, None], t_times)[0][
                     :, 0
-                ]
+                ].squeeze(-1)
 
             def rgb_sigma_fn(t_starts, t_ends, ray_indices):
                 t_origins = rays_o[ray_indices]
                 if t_origins.shape[0] == 0:
                     return torch.zeros(
                         (0, 3), device=t_origins.device
-                    ), torch.zeros((0, 1), device=t_origins.device)
+                    ), torch.zeros((0,), device=t_origins.device)
                 t_dirs = rays_d[ray_indices]
                 t_times = (
                     timestamps[ray_indices] if timestamps is not None else None
                 )
-                positions = t_origins + t_dirs * (t_starts + t_ends) / 2.0
+                positions = t_origins + t_dirs * (t_starts + t_ends)[:, None] / 2.0
                 field_out = self.field(
                     positions[:, None], t_dirs[:, None], t_times
                 )
-                return field_out["rgb"][:, 0], field_out["density"][:, 0]
+                return field_out["rgb"][:, 0], field_out["density"][:, 0].squeeze(-1)
 
-            ray_indices, t_starts, t_ends = nerfacc.ray_marching(
+            ray_indices, t_starts, t_ends = self.occupancy_grid.sampling(
                 rays_o,
                 rays_d,
-                scene_aabb=self.field.aabb.reshape(-1),
-                grid=self.occupancy_grid,
                 sigma_fn=sigma_fn,
-                near_plane=nears[..., 0],
-                far_plane=fars[..., 0],
+                near_plane=nears[0, 0],
+                far_plane=fars[0, 0],
                 render_step_size=self.occ_step_size,
                 stratified=self.training,
                 alpha_thre=self.occ_alpha_thres,
             )
-            rgb, accumulation, depth = nerfacc.rendering(
+            rgb, accumulation, depth, _ = nerfacc.rendering(
                 t_starts,
                 t_ends,
                 ray_indices,

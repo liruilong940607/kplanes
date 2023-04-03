@@ -93,6 +93,7 @@ def main():
     p.add_argument('--render-only', action='store_true')
     p.add_argument('--validate-only', action='store_true')
     p.add_argument('--spacetime-only', action='store_true')
+    p.add_argument('--trainval', action='store_true')
     p.add_argument('--config-path', type=str, required=True)
     p.add_argument('--log-dir', type=str, default=None)
     p.add_argument('--seed', type=int, default=0)
@@ -158,6 +159,8 @@ def main():
         decompose_space_time(trainer, extra_name="")
     else:
         trainer.train()
+        if args.trainval:
+            trainer.validate()
 
 
 if __name__ == "__main__":
