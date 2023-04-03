@@ -1,11 +1,16 @@
-jax
+-f https://download.pytorch.org/whl/cu117
+torch==1.13.1
+torchmetrics
 tqdm
-torch
 pillow
 opencv-python
 pandas
 lpips
 imageio
-torchmetrics
 scikit-image
-tinycudann
+nerfacc==0.5.0
+ninja
+tensorboard
+matplotlib
+# manually install tiny-cuda-nn:
+# git+https://github.com/NVlabs/tiny-cuda-nn/#subdirectory=bindings/torch

@@ -4,8 +4,8 @@ import logging
 import os
 import pprint
 import sys
-from typing import List, Dict, Any
 import tempfile
+from typing import Any, Dict, List
 
 import numpy as np
 
@@ -20,19 +20,18 @@ def get_freer_gpu():
                 return np.argmax(memory_available)
     return None  # The grep doesn't work with all GPUs. If it fails we ignore it.
 
-gpu = get_freer_gpu()
-if gpu is not None:
-    os.environ["CUDA_VISIBLE_DEVICES"] = str(gpu)
-    print(f"CUDA_VISIBLE_DEVICES set to {gpu}")
-else:
-    print(f"Did not set GPU.")
+# gpu = get_freer_gpu()
+# if gpu is not None:
+#     os.environ["CUDA_VISIBLE_DEVICES"] = str(gpu)
+#     print(f"CUDA_VISIBLE_DEVICES set to {gpu}")
+# else:
+#     print(f"Did not set GPU.")
 
 import torch
 import torch.utils.data
-from plenoxels.runners import video_trainer
-from plenoxels.runners import phototourism_trainer
-from plenoxels.runners import static_trainer
-from plenoxels.utils.create_rendering import render_to_path, decompose_space_time
+
+from plenoxels.runners import phototourism_trainer, static_trainer, video_trainer
+from plenoxels.utils.create_rendering import decompose_space_time, render_to_path
 from plenoxels.utils.parse_args import parse_optfloat
 
 
@@ -97,6 +96,7 @@ def main():
     p.add_argument('--config-path', type=str, required=True)
     p.add_argument('--log-dir', type=str, default=None)
     p.add_argument('--seed', type=int, default=0)
+    p.add_argument("--data-dir", type=str, default=None)
     p.add_argument('override', nargs=argparse.REMAINDER)
 
     args = p.parse_args()
@@ -117,6 +117,8 @@ def main():
     # that's derived from config - and should not a string.
     overrides: List[str] = args.override
     overrides_dict = {ovr.split("=")[0]: ovr.split("=")[1] for ovr in overrides}
+    if args.data_dir is not None:
+        overrides_dict["data_dirs"] = [args.data_dir]
     config.update(overrides_dict)
     if "keyframes" in config:
         model_type = "video"

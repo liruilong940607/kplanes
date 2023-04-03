@@ -2,21 +2,26 @@ import logging as log
 import math
 import os
 from collections import defaultdict
-from typing import Dict, MutableMapping, Union, Any, List
+from typing import Any, Dict, List, MutableMapping, Union
 
 import pandas as pd
 import torch
 import torch.utils.data
 
 from plenoxels.datasets.video_datasets import Video360Dataset
-from plenoxels.utils.ema import EMA
-from plenoxels.utils.my_tqdm import tqdm
+from plenoxels.models.lowrank_model import LowrankModel
 from plenoxels.ops.image import metrics
 from plenoxels.ops.image.io import write_video_to_file
-from plenoxels.models.lowrank_model import LowrankModel
+from plenoxels.utils.ema import EMA
+from plenoxels.utils.my_tqdm import tqdm
+
 from .base_trainer import BaseTrainer, init_dloader_random, initialize_model
 from .regularization import (
-    PlaneTV, TimeSmoothness, HistogramLoss, L1TimePlanes, DistortionLoss
+    DistortionLoss,
+    HistogramLoss,
+    L1TimePlanes,
+    PlaneTV,
+    TimeSmoothness,
 )
 
 
@@ -171,17 +176,21 @@ class VideoTrainer(BaseTrainer):
         return initialize_model(self, **kwargs)
 
     def get_regularizers(self, **kwargs):
-        return [
+        losses =  [
             PlaneTV(kwargs.get('plane_tv_weight', 0.0), what='field'),
-            PlaneTV(kwargs.get('plane_tv_weight_proposal_net', 0.0), what='proposal_network'),
             L1TimePlanes(kwargs.get('l1_time_planes', 0.0), what='field'),
-            L1TimePlanes(kwargs.get('l1_time_planes_proposal_net', 0.0), what='proposal_network'),
             TimeSmoothness(kwargs.get('time_smoothness_weight', 0.0), what='field'),
-            TimeSmoothness(kwargs.get('time_smoothness_weight_proposal_net', 0.0), what='proposal_network'),
-            HistogramLoss(kwargs.get('histogram_loss_weight', 0.0)),
             DistortionLoss(kwargs.get('distortion_loss_weight', 0.0)),
         ]
-
+        if not self.model.use_occ_grid: # proposal network
+            losses += [
+                PlaneTV(kwargs.get('plane_tv_weight_proposal_net', 0.0), what='proposal_network'),
+                L1TimePlanes(kwargs.get('l1_time_planes_proposal_net', 0.0), what='proposal_network'),
+                TimeSmoothness(kwargs.get('time_smoothness_weight_proposal_net', 0.0), what='proposal_network'),
+                HistogramLoss(kwargs.get('histogram_loss_weight', 0.0)),
+            ]
+        return losses
+    
     @property
     def calc_metrics_every(self):
         return 5
